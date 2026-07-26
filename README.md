@@ -61,6 +61,7 @@ Action нужен, **когда сборку надо выполнить в CI**
 |---|---|---|---|
 | `token` | да | — | CI-токен Layero |
 | `project` | нет | из `.layero/project.json` | Проект-получатель (id или slug) |
+| `name` | нет | — | Имя проекта при создании на первом деплое |
 | `prod` | нет | `false` | Публиковать в production, а не в preview |
 | `branch` | нет | — | Окружение конкретной ветки. Приоритетнее `prod` |
 | `prebuilt` | нет | — | Каталог с готовой сборкой — не собирать на Layero |
@@ -81,7 +82,7 @@ Action нужен, **когда сборку надо выполнить в CI**
         id: deploy
         with:
           token: ${{ secrets.LAYERO_TOKEN }}
-      - run: echo "Опубликовано на ${{ steps.deploy.outputs.url }}"
+      - run: 'echo "Опубликовано на ${{ steps.deploy.outputs.url }}"'
 ```
 
 Адрес также попадает в summary задачи — его видно на странице запуска, без
