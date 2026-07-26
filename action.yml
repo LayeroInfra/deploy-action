@@ -19,6 +19,11 @@ inputs:
       want when one repository deploys into several projects. Optional: without it
       the action uses the linked project, or creates one on first deploy.
     required: false
+  name:
+    description: >-
+      Project name, used only when the project is created on the first deploy.
+      Ignored afterwards.
+    required: false
   prod:
     description: 'Deploy to production instead of a preview. Default: false.'
     required: false
@@ -74,6 +79,7 @@ runs:
         LAYERO_TOKEN: ${{ inputs.token }}
         LAYERO_VERSION: ${{ inputs.version }}
         IN_PROJECT: ${{ inputs.project }}
+        IN_NAME: ${{ inputs.name }}
         IN_PROD: ${{ inputs.prod }}
         IN_BRANCH: ${{ inputs.branch }}
         IN_PREBUILT: ${{ inputs.prebuilt }}
@@ -92,6 +98,7 @@ runs:
         # unset optional input would kill the deploy.
         args=(deploy --yes --json)
         if [ -n "${IN_PROJECT}"  ]; then args+=(--project  "${IN_PROJECT}");  fi
+        if [ -n "${IN_NAME}"     ]; then args+=(--name     "${IN_NAME}");     fi
         if [ -n "${IN_BRANCH}"   ]; then args+=(--branch   "${IN_BRANCH}");   fi
         if [ -n "${IN_TYPE}"     ]; then args+=(--type     "${IN_TYPE}");     fi
         if [ -n "${IN_ROOT}"     ]; then args+=(--root     "${IN_ROOT}");     fi
