@@ -21,8 +21,12 @@ inputs:
     required: false
   name:
     description: >-
-      Project name, used only when the project is created on the first deploy.
-      Ignored afterwards.
+      Project name, used ONLY when the project is created on the first deploy.
+      Note that every run is a "first deploy" unless the repository contains
+      .layero/project.json — so a workflow that passes `name` alone creates a
+      NEW project each time (the slug gets a suffix, so nothing fails loudly).
+      For a workflow that should keep updating the same project, pass `project`
+      instead.
     required: false
   prod:
     description: 'Deploy to production instead of a preview. Default: false.'
