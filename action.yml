@@ -1,0 +1,142 @@
+name: 'Deploy to Layero'
+description: 'Deploy a site or app to Layero — hosting with servers and CDN inside Russia. Works with any framework or a prebuilt directory.'
+author: 'Layero'
+
+branding:
+  icon: 'upload-cloud'
+  color: 'gray-dark'
+
+inputs:
+  token:
+    description: >-
+      Layero CI token. Create one at https://app.layero.ru/settings/cli and store
+      it as a repository secret. Unlike a login session it never expires — revoke
+      it on the same page when it is no longer needed.
+    required: true
+  project:
+    description: >-
+      Target project id or slug. Overrides .layero/project.json, which is what you
+      want when one repository deploys into several projects. Optional: without it
+      the action uses the linked project, or creates one on first deploy.
+    required: false
+  prod:
+    description: 'Deploy to production instead of a preview. Default: false.'
+    required: false
+    default: 'false'
+  branch:
+    description: >-
+      Deploy into a specific branch environment. Takes precedence over `prod`.
+    required: false
+  prebuilt:
+    description: >-
+      Ship an already-built directory instead of building on Layero. Pass the
+      path (e.g. `dist`). Use this when the build needs CI-only secrets or
+      private dependencies — that is the main reason to run this action at all
+      rather than connecting the repository directly.
+    required: false
+  type:
+    description: >-
+      Framework override — vite, next, astro, cra, sveltekit, nuxt, gatsby,
+      docusaurus, eleventy, hugo, static… Only needed when auto-detection is wrong.
+    required: false
+  root:
+    description: 'Monorepo: subdirectory the builder should treat as the app root.'
+    required: false
+  working-directory:
+    description: 'Directory to run the deploy from. Default: repository root.'
+    required: false
+    default: '.'
+  version:
+    description: >-
+      Version of the `layero` npm package to run. Default `latest`. Pin it if you
+      need reproducible CI.
+    required: false
+    default: 'latest'
+
+outputs:
+  url:
+    description: 'URL the deploy is served at.'
+    value: ${{ steps.deploy.outputs.url }}
+  deploy-id:
+    description: 'Id of the created deploy.'
+    value: ${{ steps.deploy.outputs.deploy-id }}
+
+runs:
+  using: composite
+  steps:
+    - id: deploy
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        # The CLI reads the token from here. It is never passed as an argument:
+        # process arguments are visible to other processes on the runner and end
+        # up in traces, environment does not.
+        LAYERO_TOKEN: ${{ inputs.token }}
+        LAYERO_VERSION: ${{ inputs.version }}
+        IN_PROJECT: ${{ inputs.project }}
+        IN_PROD: ${{ inputs.prod }}
+        IN_BRANCH: ${{ inputs.branch }}
+        IN_PREBUILT: ${{ inputs.prebuilt }}
+        IN_TYPE: ${{ inputs.type }}
+        IN_ROOT: ${{ inputs.root }}
+      run: |
+        set -euo pipefail
+
+        if [ -z "${LAYERO_TOKEN:-}" ]; then
+          echo "::error::input 'token' is empty. Create a CI token at https://app.layero.ru/settings/cli and pass it from a repository secret."
+          exit 1
+        fi
+
+        # Deliberately `if` and not `[ -n … ] && …`: under `set -e` a failing
+        # test as the last command of an && list aborts the whole step, so every
+        # unset optional input would kill the deploy.
+        args=(deploy --yes --json)
+        if [ -n "${IN_PROJECT}"  ]; then args+=(--project  "${IN_PROJECT}");  fi
+        if [ -n "${IN_BRANCH}"   ]; then args+=(--branch   "${IN_BRANCH}");   fi
+        if [ -n "${IN_TYPE}"     ]; then args+=(--type     "${IN_TYPE}");     fi
+        if [ -n "${IN_ROOT}"     ]; then args+=(--root     "${IN_ROOT}");     fi
+        if [ -n "${IN_PREBUILT}" ]; then args+=(--prebuilt "${IN_PREBUILT}"); fi
+        # `branch` wins over `prod` in the CLI; keep that precedence explicit here
+        # so the flag combination in a workflow behaves the way it reads.
+        if [ "${IN_PROD}" = "true" ] && [ -z "${IN_BRANCH}" ]; then
+          args+=(--prod)
+        fi
+
+        # Stream the log to the job output AND keep a copy: the deploy URL only
+        # exists inside the JSON event stream, and a pipe would swallow the CLI's
+        # exit code even with pipefail on some runners.
+        log="$(mktemp)"
+        set +e
+        npx --yes "layero@${LAYERO_VERSION}" "${args[@]}" 2>&1 | tee "$log"
+        status=${PIPESTATUS[0]}
+        set -e
+
+        if [ "$status" -ne 0 ]; then
+          echo "::error::layero deploy failed with exit code $status"
+          exit "$status"
+        fi
+
+        # The `ready` event carries the final URL. Take the LAST one: a run may
+        # emit intermediate events, and only the last reflects what got published.
+        # `|| true` is load-bearing: with `pipefail` a non-matching grep makes the
+        # whole substitution fail, and `set -e` would abort the step — turning a
+        # successful deploy whose URL we merely failed to parse into a red build.
+        url="$(grep -o '"event"[[:space:]]*:[[:space:]]*"ready".*' "$log" | tail -n 1 \
+               | sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' || true)"
+        deploy_id="$(grep -o '"deploy_id"[[:space:]]*:[[:space:]]*"[^"]*"' "$log" | tail -n 1 \
+               | sed -n 's/.*"deploy_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' || true)"
+
+        echo "url=${url}" >> "$GITHUB_OUTPUT"
+        echo "deploy-id=${deploy_id}" >> "$GITHUB_OUTPUT"
+
+        if [ -n "$url" ]; then
+          {
+            echo "### Deployed to Layero"
+            echo ""
+            echo "$url"
+          } >> "$GITHUB_STEP_SUMMARY"
+        else
+          # Not fatal: the deploy succeeded, we just could not read the URL back.
+          # Failing here would turn a green deploy red for a parsing detail.
+          echo "::warning::deploy succeeded but no ready-event URL was found in the output"
+        fi
