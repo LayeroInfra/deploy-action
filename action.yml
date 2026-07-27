@@ -29,12 +29,22 @@ inputs:
       instead.
     required: false
   prod:
-    description: 'Deploy to production instead of a preview. Default: false.'
+    description: >-
+      Target production. Only meaningful for a project with a repository
+      connected on Layero's side: there the archive this action uploads lands
+      in the isolated `cli` environment and production is left alone unless
+      you pass this. For a project WITHOUT a connected repository the `cli`
+      environment IS the apex, so every run publishes to the live address
+      whether or not this is set. Default: false.
     required: false
     default: 'false'
   branch:
     description: >-
-      Deploy into a specific branch environment. Takes precedence over `prod`.
+      Branch environment to deploy into. Has NO effect through this action:
+      the backend files every archive upload under the reserved `cli`
+      environment regardless of this input. It only does something for deploys
+      driven by a connected repository, which this action does not perform.
+      Kept for compatibility — see the README before using it.
     required: false
   prebuilt:
     description: >-
